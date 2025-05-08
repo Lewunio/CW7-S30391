@@ -1,5 +1,6 @@
 ﻿using System.Data;
 using CW7_S30391.Exceptions;
+using CW7_S30391.Models;
 using CW7_S30391.Models.DTOs;
 using Microsoft.Data.SqlClient;
 
@@ -9,6 +10,7 @@ public interface IDbService
 {
     public Task<IEnumerable<TripGetDTO>> GetTripsDetailsAsync();
     public Task<IEnumerable<ClientTripGetDTO>> GetTripsDetailsOfClientAsync(int id);
+    public  Task<Client> CreateClient(ClientCreateDTO body);
 }
 
 public class DbService(IConfiguration? config) : IDbService
@@ -77,6 +79,19 @@ public class DbService(IConfiguration? config) : IDbService
         var trips = new List<ClientTripGetDTO>();
         
         await using var connection = await GetConnectionAsync();
+        //walidacja czy istnieje klient o podanym id
+        const string sqlVal = "select 1 from Client where IdClient = @id";
+        await using var commandVal = new SqlCommand(sqlVal, connection);
+        commandVal.Parameters.AddWithValue("@id", id);
+        await connection.OpenAsync();
+        await using (var readerVal = await commandVal.ExecuteReaderAsync())
+        {
+            if (!readerVal.HasRows)
+            {
+                throw new NotFoundException($"Client with id: {id} does not exist");
+            }
+        }
+        
         //pobiera wszsytkie dane z tabeli Trip i Client Trip, gdzie IdClient jest rowne podanemu Id
         const string sql = """
                            SELECT T.IdTrip, T.Name, T.Description, T.DateFrom, T.DateTo, T.MaxPeople, CT.RegisteredAt, CT.PaymentDate FROM Client C
@@ -105,9 +120,32 @@ public class DbService(IConfiguration? config) : IDbService
         }
         if (trips.Count == 0)
         {
-            throw new NotFoundException("Trip or Client not found");
+            throw new NotFoundException("Client has no trips");
         }
         return trips;
 
+    }
+
+    public async Task<Client> CreateClient(ClientCreateDTO body)
+    {
+        await using var connection = await GetConnectionAsync();
+        //wstaw Clienta do tabeli i id tego obiektu
+        const string sql = "insert into Client (FirstName, LastName, Email, Telephone, Pesel) values (@FirstName, @LastName, @Email, @Telephone, @Pesel);Select SCOPE_IDENTITY()";
+        await using var command = new SqlCommand(sql,connection);
+        command.Parameters.AddWithValue("@FirstName", body.FirstName);
+        command.Parameters.AddWithValue("@LastName", body.LastName);
+        command.Parameters.AddWithValue("@Email", body.Email);
+        command.Parameters.AddWithValue("@Telephone", body.Telephone);
+        command.Parameters.AddWithValue("@Pesel", body.Pesel);
+        var id = Convert.ToInt32(await command.ExecuteScalarAsync());
+        return new Client
+        {
+            IdClient = id,
+            FirstName = body.FirstName,
+            LastName = body.LastName,
+            Email = body.Email,
+            Telephone = body.Telephone,
+            Pesel = body.Pesel
+        };
     }
 }
