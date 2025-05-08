@@ -10,7 +10,8 @@ public interface IDbService
 {
     public Task<IEnumerable<TripGetDTO>> GetTripsDetailsAsync();
     public Task<IEnumerable<ClientTripGetDTO>> GetTripsDetailsOfClientAsync(int id);
-    public  Task<Client> CreateClient(ClientCreateDTO body);
+    public Task<Client> CreateClient(ClientCreateDTO body);
+    public Task PutTripToClientAsync(int id, int tripId);
 }
 
 public class DbService(IConfiguration? config) : IDbService
@@ -147,5 +148,44 @@ public class DbService(IConfiguration? config) : IDbService
             Telephone = body.Telephone,
             Pesel = body.Pesel
         };
+    }
+
+    public async Task PutTripToClientAsync(int id, int tripId)
+    {
+        await using var connection = await GetConnectionAsync();
+        //sprawdz czy jest taki klient
+        var clientCmd = new SqlCommand("SELECT 1 FROM Client WHERE IdClient = @ClientId", connection);
+        clientCmd.Parameters.AddWithValue("@ClientId", id);
+        if (clientCmd.ExecuteScalar() == null)
+            throw new NotFoundException("Client does not exist");
+        
+        var tripCmd = new SqlCommand("SELECT MaxPeople FROM Trip WHERE IdTrip = @TripId", connection);
+        tripCmd.Parameters.AddWithValue("@TripId", tripId);
+        var maxPeopleObj = tripCmd.ExecuteScalar();
+        if (maxPeopleObj == null)
+            throw new NotFoundException("Trip does not exist");
+        int maxPeople = Convert.ToInt32(maxPeopleObj);
+        
+        //sprawdz czy nie przekroczylo liczbe osob
+        var countCmd = new SqlCommand("SELECT COUNT(*) FROM Client_Trip WHERE IdTrip = @TripId", connection);
+        countCmd.Parameters.AddWithValue("@TripId", tripId);
+        int currentCount = countCmd.ExecuteScalar() == null ? 0 : (int)countCmd.ExecuteScalar();
+        
+        if (currentCount >= maxPeople)
+            throw new BadRequestException("Osiągnięto maksymalną liczbę uczestników.");
+        
+        //sprawdz czy nie jest juz zapisany
+        var checkCmd = new SqlCommand("SELECT 1 FROM Client_Trip WHERE IdClient = @ClientId AND IdTrip = @TripId", connection);
+        checkCmd.Parameters.AddWithValue("@ClientId", id);
+        checkCmd.Parameters.AddWithValue("@TripId", tripId);
+        if (checkCmd.ExecuteScalar() != null)
+            throw new BadRequestException("Klient już zapisany na tę wycieczkę.");
+        
+        //dodaj do tabeli Client_Trip
+        var cmd = new SqlCommand("INSERT INTO Client_Trip (IdClient, IdTrip,RegisteredAt) VALUES (@ClientId, @TripId, @RegisteredAt)", connection);
+        cmd.Parameters.AddWithValue("@ClientId", id);
+        cmd.Parameters.AddWithValue("@TripId", tripId);
+        cmd.Parameters.AddWithValue("@RegisteredAt", DateTime.Now.ToString("yyyyMMdd"));
+        await cmd.ExecuteNonQueryAsync();
     }
 }

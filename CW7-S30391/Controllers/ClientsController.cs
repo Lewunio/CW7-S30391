@@ -30,4 +30,23 @@ public class ClientsController(IDbService dbService) : ControllerBase
         var client = await dbService.CreateClient(body);
         return Created($"clients/{client.IdClient}", client);
     }
+
+    //przypisuje wyczieczkie do klienta po idkach jesli oboje istnieja, dokladnie robi rekord w Client_trip
+    [HttpPut("{id}/trips/{tripId}")]
+    public async Task<IActionResult> RegisterTripToClient([FromRoute] int id, [FromRoute] int tripId)
+    {
+        try
+        {
+            await dbService.PutTripToClientAsync(id, tripId);
+            return Ok("Zapisano wycieczke dla klienta");
+        }
+        catch (NotFoundException e)
+        {
+            return NotFound(e.Message);
+        }
+        catch (BadRequestException e)
+        {
+            return BadRequest(e.Message);
+        }
+    }
 }
