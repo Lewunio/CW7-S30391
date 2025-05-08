@@ -10,8 +10,9 @@ public interface IDbService
 {
     public Task<IEnumerable<TripGetDTO>> GetTripsDetailsAsync();
     public Task<IEnumerable<ClientTripGetDTO>> GetTripsDetailsOfClientAsync(int id);
-    public Task<Client> CreateClient(ClientCreateDTO body);
+    public Task<Client> CreateClientAsync(ClientCreateDTO body);
     public Task PutTripToClientAsync(int id, int tripId);
+    public Task RemoveTripFromClientAsync(int id, int tripId);
 }
 
 public class DbService(IConfiguration? config) : IDbService
@@ -127,7 +128,7 @@ public class DbService(IConfiguration? config) : IDbService
 
     }
 
-    public async Task<Client> CreateClient(ClientCreateDTO body)
+    public async Task<Client> CreateClientAsync(ClientCreateDTO body)
     {
         await using var connection = await GetConnectionAsync();
         //wstaw Clienta do tabeli i id tego obiektu
@@ -157,16 +158,17 @@ public class DbService(IConfiguration? config) : IDbService
         var clientCmd = new SqlCommand("SELECT 1 FROM Client WHERE IdClient = @ClientId", connection);
         clientCmd.Parameters.AddWithValue("@ClientId", id);
         if (clientCmd.ExecuteScalar() == null)
-            throw new NotFoundException("Client does not exist");
+            throw new NotFoundException($"Client {id} does not exist");
         
+        //sprawdz czy jest taka wycieczka i pobierz liczbe max ludzi
         var tripCmd = new SqlCommand("SELECT MaxPeople FROM Trip WHERE IdTrip = @TripId", connection);
         tripCmd.Parameters.AddWithValue("@TripId", tripId);
         var maxPeopleObj = tripCmd.ExecuteScalar();
         if (maxPeopleObj == null)
-            throw new NotFoundException("Trip does not exist");
+            throw new NotFoundException($"Trip {tripId} does not exist");
         int maxPeople = Convert.ToInt32(maxPeopleObj);
         
-        //sprawdz czy nie przekroczylo liczbe osob
+        //pobierz liczbe osob zapisana na wycieczke do sprawdzenia
         var countCmd = new SqlCommand("SELECT COUNT(*) FROM Client_Trip WHERE IdTrip = @TripId", connection);
         countCmd.Parameters.AddWithValue("@TripId", tripId);
         int currentCount = countCmd.ExecuteScalar() == null ? 0 : (int)countCmd.ExecuteScalar();
@@ -179,7 +181,7 @@ public class DbService(IConfiguration? config) : IDbService
         checkCmd.Parameters.AddWithValue("@ClientId", id);
         checkCmd.Parameters.AddWithValue("@TripId", tripId);
         if (checkCmd.ExecuteScalar() != null)
-            throw new BadRequestException("Klient już zapisany na tę wycieczkę.");
+            throw new BadRequestException($"Klient {id} już zapisany na tę wycieczkę.");
         
         //dodaj do tabeli Client_Trip
         var cmd = new SqlCommand("INSERT INTO Client_Trip (IdClient, IdTrip,RegisteredAt) VALUES (@ClientId, @TripId, @RegisteredAt)", connection);
@@ -187,5 +189,20 @@ public class DbService(IConfiguration? config) : IDbService
         cmd.Parameters.AddWithValue("@TripId", tripId);
         cmd.Parameters.AddWithValue("@RegisteredAt", DateTime.Now.ToString("yyyyMMdd"));
         await cmd.ExecuteNonQueryAsync();
+    }
+
+    public async Task RemoveTripFromClientAsync(int id, int tripId)
+    {
+        await using var connection = await GetConnectionAsync();
+        //usun z tabeli Client_trip
+        const string sql = "DELETE FROM Client_Trip WHERE IdClient = @ClientId AND IdTrip = @TripId";
+        await using var command = new SqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@ClientId", id);
+        command.Parameters.AddWithValue("@TripId", tripId);
+        var numOfRows = await command.ExecuteNonQueryAsync();
+        if (numOfRows == 0)
+        {
+            throw new NotFoundException($"Client {id} has no trip with id {tripId}");
+        }
     }
 }

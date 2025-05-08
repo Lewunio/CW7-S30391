@@ -27,7 +27,7 @@ public class ClientsController(IDbService dbService) : ControllerBase
     [HttpPost]
     public async Task<IActionResult> CreateClient([FromBody] ClientCreateDTO body)
     {
-        var client = await dbService.CreateClient(body);
+        var client = await dbService.CreateClientAsync(body);
         return Created($"clients/{client.IdClient}", client);
     }
 
@@ -49,4 +49,19 @@ public class ClientsController(IDbService dbService) : ControllerBase
             return BadRequest(e.Message);
         }
     }
+
+    //usun przypisanie klienta do wycieczki
+    [HttpDelete("{id}/trips/{tripId}")]
+    public async Task<IActionResult> DeleteTripFromClientById([FromRoute] int id, [FromRoute] int tripId)
+    {
+        try
+        {
+            await dbService.RemoveTripFromClientAsync(id, tripId);   
+            return NoContent();
+        } catch (NotFoundException e)
+        {
+            return NotFound(e.Message);
+        }
+    }
+    
 }
